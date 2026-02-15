@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+  <!-- PWA配置 -->
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="视力训练">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#3b82f6">
+
+  <!-- Manifest链接 -->
+
+  <link rel="manifest" href="/manifest.json">
+
+  <!-- iOS图标 -->
+
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png">
+
+  <!-- 标准图标 -->
+
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+
+  <title>视力训练</title>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    * {
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    
+    #root {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+    
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: linear-gradient(to right, #60a5fa, #3b82f6);
+      cursor: pointer;
+      height: 10px;
+      border-radius: 5px;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+    }
+    
+    input[type="range"]::-webkit-slider-track {
+      background: transparent;
+      height: 10px;
+      border-radius: 5px;
+    }
+    
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      background: white;
+      height: 24px;
+      width: 24px;
+      border-radius: 50%;
+      border: 3px solid #3b82f6;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.6);
+      cursor: pointer;
+    }
+    
+    input[type="range"]::-moz-range-track {
+      background: linear-gradient(to right, #60a5fa, #3b82f6);
+      height: 10px;
+      border-radius: 5px;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+    }
+    
+    input[type="range"]::-moz-range-thumb {
+      background: white;
+      height: 24px;
+      width: 24px;
+      border-radius: 50%;
+      border: 3px solid #3b82f6;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.6);
+      cursor: pointer;
+    }
+    
+    @keyframes slideUp {
+      from {
+        transform: translateX(-50%) translateY(100px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+      }
+    }
+  </style>
+
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    function VisionTrainingApp() {
+      const [mode, setMode] = useState('ball');
+      const [isTraining, setIsTraining] = useState(false);
+      const [showSettings, setShowSettings] = useState(false);
+      const [elapsedTime, setElapsedTime] = useState(0);
+      const [currentNumber, setCurrentNumber] = useState(42);
+      const [depth, setDepth] = useState(50);
+      const [isMovingNear, setIsMovingNear] = useState(true);
+      const [uploadedImage, setUploadedImage] = useState(null);
+      const [isPaused, setIsPaused] = useState(false);
+      const [eRotation, setERotation] = useState(0);
+      const [showCompletionModal, setShowCompletionModal] = useState(false);
+
+      const [settings, setSettings] = useState({
+        speed: 3.0,
+        pauseNear: 1,
+        pauseFar: 1.5,
+        ballColor: '#4CAF50',
+        trainingDuration: 10,
+        nearSize: 200,
+        farSize: 5
+      });
+
+      const numberScale = 0.65;
+      const animationRef = useRef(null);
+
+      useEffect(() => {
+        let interval;
+        if (isTraining) {
+          interval = setInterval(() => {
+            setElapsedTime(t => {
+              const newTime = t + 1;
+              const totalSeconds = settings.trainingDuration * 60;
+              if (newTime >= totalSeconds) {
+                setIsTraining(false);
+                setShowCompletionModal(true);
+                return 0;
+              }
+              return newTime;
+            });
+          }, 1000);
+        } else {
+          setElapsedTime(0);
+        }
+        return () => {
+          if (interval) clearInterval(interval);
+        };
+      }, [isTraining, settings.trainingDuration]);
+
+      useEffect(() => {
+        if (!isTraining) {
+          if (animationRef.current) {
+            cancelAnimationFrame(animationRef.current);
+          }
+          return;
+        }
+
+        const animate = () => {
+          if (isPaused) {
+            animationRef.current = requestAnimationFrame(animate);
+            return;
+          }
+
+          setDepth(prevDepth => {
+            const minDepth = 0;
+            const maxDepth = 100;
+            const speed = settings.speed * 0.5;
+            let newDepth = isMovingNear ? prevDepth + speed : prevDepth - speed;
+
+            if (newDepth >= maxDepth) {
+              newDepth = maxDepth;
+              setIsMovingNear(false);
+              setCurrentNumber(Math.floor(Math.random() * 90) + 10);
+              const rotations = [0, 45, 90, 135, 180, 225, 270, 315];
+              setERotation(rotations[Math.floor(Math.random() * 8)]);
+              setIsPaused(true);
+              setTimeout(() => setIsPaused(false), settings.pauseNear * 1000);
+            } else if (newDepth <= minDepth) {
+              newDepth = minDepth;
+              setIsMovingNear(true);
+              setCurrentNumber(Math.floor(Math.random() * 90) + 10);
+              const rotations = [0, 45, 90, 135, 180, 225, 270, 315];
+              setERotation(rotations[Math.floor(Math.random() * 8)]);
+              setIsPaused(true);
+              setTimeout(() => setIsPaused(false), settings.pauseFar * 1000);
+            }
+            return newDepth;
+          });
+
+          animationRef.current = requestAnimationFrame(animate);
+        };
+
+        animationRef.current = requestAnimationFrame(animate);
+        return () => {
+          if (animationRef.current) {
+            cancelAnimationFrame(animationRef.current);
+          }
+        };
+      }, [isTraining, settings, isMovingNear, isPaused]);
+
+      const formatTime = (seconds) => {
+        const totalSeconds = settings.trainingDuration * 60;
+        const remaining = totalSeconds - seconds;
+        const mins = Math.floor(remaining / 60);
+        const secs = remaining % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      };
+
+      const handleImageUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              const size = Math.min(img.width, img.height);
+              canvas.width = size;
+              canvas.height = size;
+              const ctx = canvas.getContext('2d');
+              const startX = (img.width - size) / 2;
+              const startY = (img.height - size) / 2;
+              ctx.drawImage(img, startX, startY, size, size, 0, 0, size, size);
+              setUploadedImage(canvas.toDataURL('image/jpeg', 0.9));
+            };
+            img.src = event.target.result;
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const currentFontSize = (settings.farSize || 5) + ((settings.nearSize || 200) - (settings.farSize || 5)) * (depth / 100);
+      const ballSize = currentFontSize / numberScale;
+      const numberColor = (settings.ballColor === '#FFFFFF' || settings.ballColor === '#FFEB3B') ? '#000000' : '#FFFFFF';
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900 flex flex-col" style={{height: '100vh', width: '100vw'}}>
+          <div className="bg-white/10 backdrop-blur-md p-4 flex justify-between items-center border-b border-white/20">
+            <h1 className="text-xl md:text-2xl font-bold text-white">👁️ 视力训练</h1>
+            <button onClick={() => setShowSettings(!showSettings)} className="p-2 rounded-xl bg-white/10 hover:bg-white/20">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex-1 flex items-center justify-center relative overflow-hidden" style={{background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)'}}>
+            <div className="absolute inset-0 flex items-center justify-center" style={{perspective: '2000px'}}>
+              {mode === 'ball' ? (
+                <div style={{opacity: 0.9, transition: isPaused ? 'none' : 'all 0.05s linear'}}>
+                  <div className="rounded-full shadow-2xl flex items-center justify-center" style={{
+                    backgroundColor: settings.ballColor,
+                    width: `${ballSize}px`,
+                    height: `${ballSize}px`,
+                    boxShadow: `0 ${ballSize * 0.1}px ${ballSize * 0.3}px rgba(0,0,0,0.3)`
+                  }}>
+                    <span className="font-bold select-none" style={{
+                      fontSize: `${currentFontSize}px`,
+                      lineHeight: '1',
+                      color: numberColor
+                    }}>{currentNumber}</span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{opacity: 0.9, transition: isPaused ? 'none' : 'all 0.05s linear'}}>
+                  {uploadedImage ? (
+                    <img src={uploadedImage} alt="训练图片" className="rounded-2xl" style={{
+                      width: `${ballSize}px`,
+                      height: `${ballSize}px`,
+                      objectFit: 'contain'
+                    }} />
+                  ) : (
+                    <div className="bg-white rounded-2xl flex items-center justify-center" style={{
+                      width: `${ballSize}px`,
+                      height: `${ballSize}px`
+                    }}>
+                      <div style={{
+                        transform: `rotate(${eRotation}deg)`,
+                        transition: 'transform 0.3s',
+                        width: `${currentFontSize}px`,
+                        height: `${currentFontSize}px`
+                      }}>
+                        <svg width="100%" height="100%" viewBox="0 0 100 100">
+                          <rect x="0" y="0" width="100" height="20" fill="black"/>
+                          <rect x="0" y="40" width="60" height="20" fill="black"/>
+                          <rect x="0" y="80" width="100" height="20" fill="black"/>
+                        </svg>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white/10 backdrop-blur-md p-4 md:p-6 border-t border-white/20">
+            <div className="max-w-3xl mx-auto flex gap-3 md:gap-4 items-center justify-center flex-wrap">
+              <button onClick={() => { setMode('ball'); if (isTraining) setIsTraining(false); }}
+                className={`px-4 md:px-6 py-2 md:py-3 rounded-2xl font-semibold transition-all shadow-lg text-sm md:text-base ${
+                  mode === 'ball' ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white' : 'bg-white/10 text-white'
+                }`}>
+                数字小球
+              </button>
+              <button onClick={() => { setMode('image'); if (isTraining) setIsTraining(false); }}
+                className={`px-4 md:px-6 py-2 md:py-3 rounded-2xl font-semibold transition-all shadow-lg text-sm md:text-base ${
+                  mode === 'image' ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white' : 'bg-white/10 text-white'
+                }`}>
+                视力表E字
+              </button>
+              <button onClick={() => setIsTraining(!isTraining)}
+                className={`px-4 md:px-6 py-2 md:py-3 rounded-2xl font-semibold text-white transition-all shadow-lg text-sm md:text-base ${
+                  isTraining ? 'bg-gradient-to-r from-red-500 to-pink-600' : 'bg-gradient-to-r from-green-500 to-emerald-600'
+                }`}>
+                {isTraining ? '停止训练' : '开始训练'}
+              </button>
+            </div>
+          </div>
+
+          {showSettings && (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto p-4"
+              onClick={(e) => { if (e.target === e.currentTarget) setShowSettings(false); }}>
+              <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl shadow-2xl max-w-lg w-full my-8 border border-white/10">
+                <div className="p-6 border-b border-white/10 flex justify-between items-center">
+                  <h2 className="text-2xl font-bold text-white">⚙️ 训练设置</h2>
+                  <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-white/10 rounded-xl">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                
+                <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                  <div className="bg-blue-500/20 border border-blue-400/30 p-4 rounded-xl">
+                    <p className="text-sm text-blue-100">
+                      <strong className="text-blue-200">训练原理:</strong> 通过调节字体大小模拟远近距离变化,锻炼眼部睫状肌的调节能力。
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-200 mb-3">
+                      远处字体大小: <span className="text-white text-lg">{settings.farSize || 5}px</span>
+                    </label>
+                    <input type="range" min="1" max="100" step="1" value={settings.farSize || 5}
+                      onChange={(e) => setSettings({...settings, farSize: Number(e.target.value)})} className="w-full mb-3" />
+                    <input type="text" value={settings.farSize === '' ? '' : settings.farSize}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d+$/.test(val)) {
+                          if (val === '') setSettings({...settings, farSize: ''});
+                          else setSettings({...settings, farSize: Number(val)});
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || Number(val) <= 0) setSettings({...settings, farSize: 5});
+                        else if (Number(val) > 100) setSettings({...settings, farSize: 100});
+                      }}
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+                      placeholder="输入数值 (1-100)" />
+                    <div className="mt-1 text-xs text-blue-300">有效范围: 1-100px (推荐最小值: 5px)</div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-200 mb-3">
+                      近处字体大小: <span className="text-white text-lg">{settings.nearSize || 200}px</span>
+                    </label>
+                    <input type="range" min="100" max="300" step="5" value={settings.nearSize || 200}
+                      onChange={(e) => setSettings({...settings, nearSize: Number(e.target.value)})} className="w-full mb-3" />
+                    <input type="text" value={settings.nearSize === '' ? '' : settings.nearSize}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || /^\d+$/.test(val)) {
+                          if (val === '') setSettings({...settings, nearSize: ''});
+                          else setSettings({...settings, nearSize: Number(val)});
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const val = e.target.value;
+                        if (val === '' || Number(val) < 100) setSettings({...settings, nearSize: 100});
+                        else if (Number(val) > 300) setSettings({...settings, nearSize: 300});
+                      }}
+                      className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white"
+                      placeholder="输入数值 (100-300)" />
+                    <div className="mt-1 text-xs text-blue-300">有效范围: 100-300px</div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-200 mb-3">
+                      移动速度: <span className="text-white text-lg">{settings.speed.toFixed(1)}</span>
+                    </label>
+                    <input type="range" min="0.1" max="5.0" step="0.1" value={settings.speed}
+                      onChange={(e) => setSettings({...settings, speed: Number(e.target.value)})} className="w-full" />
+                    <div className="flex justify-between text-xs text-blue-300 mt-2">
+                      <span>慢 (0.1)</span>
+                      <span>快 (5.0)</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-blue-200 mb-3">
+                        近处停留: <span className="text-white">{settings.pauseNear}秒</span>
+                      </label>
+                      <input type="range" min="0.5" max="5" step="0.5" value={settings.pauseNear}
+                        onChange={(e) => setSettings({...settings, pauseNear: Number(e.target.value)})} className="w-full" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-blue-200 mb-3">
+                        远处停留: <span className="text-white">{settings.pauseFar}秒</span>
+                      </label>
+                      <input type="range" min="0.5" max="5" step="0.5" value={settings.pauseFar}
+                        onChange={(e) => setSettings({...settings, pauseFar: Number(e.target.value)})} className="w-full" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-200 mb-3">
+                      训练时长: <span className="text-white text-lg">{settings.trainingDuration}分钟</span>
+                    </label>
+                    <input type="range" min="1" max="30" value={settings.trainingDuration}
+                      onChange={(e) => setSettings({...settings, trainingDuration: Number(e.target.value)})} className="w-full" />
+                  </div>
+
+                  {mode === 'ball' && (
+                    <div>
+                      <label className="block text-sm font-semibold text-blue-200 mb-3">小球颜色</label>
+                      <div className="grid grid-cols-4 gap-3">
+                        {[
+                          {name: '黑', color: '#000000'}, {name: '白', color: '#FFFFFF'},
+                          {name: '红', color: '#F44336'}, {name: '黄', color: '#FFEB3B'},
+                          {name: '蓝', color: '#2196F3'}, {name: '绿', color: '#4CAF50'},
+                          {name: '粉', color: '#E91E63'}, {name: '紫', color: '#9C27B0'}
+                        ].map(item => (
+                          <button key={item.color} onClick={() => setSettings({...settings, ballColor: item.color})}
+                            className={`h-16 rounded-xl border-4 transition-all ${
+                              settings.ballColor === item.color ? 'border-white scale-105' : 'border-white/30'
+                            }`} style={{backgroundColor: item.color}}>
+                            <span className={`text-xs font-semibold ${
+                              item.color === '#FFFFFF' || item.color === '#FFEB3B' ? 'text-gray-700' : 'text-white'
+                            }`}>{item.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {mode === 'image' && (
+                    <div>
+                      <label className="block text-sm font-semibold text-blue-200 mb-2">自定义训练图片(可选)</label>
+                      <input type="file" accept="image/*" onChange={handleImageUpload} className="w-full text-sm text-white" />
+                      {uploadedImage && (
+                        <div className="mt-3">
+                          <img src={uploadedImage} alt="预览" className="w-full h-32 object-cover rounded-xl" />
+                          <button onClick={() => setUploadedImage(null)} className="mt-2 text-sm text-red-400">
+                            移除图片,恢复E字视力表
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="bg-amber-500/20 border border-amber-400/30 p-4 rounded-xl">
+                    <p className="text-sm text-amber-100">
+                      <strong className="text-amber-200">💡 建议:</strong> 每次训练10-15分钟,每天2-3次。
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-6 border-t border-white/10">
+                  <button onClick={() => setShowSettings(false)}
+                    className="w-full py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-bold">
+                    ✓ 保存设置
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showCompletionModal && (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-gradient-to-br from-green-600 to-emerald-700 rounded-3xl shadow-2xl max-w-md w-full p-8 text-center border-4 border-white/30">
+                <div className="text-6xl mb-4">🎉</div>
+                <h2 className="text-3xl font-bold text-white mb-4">训练完成!</h2>
+                <p className="text-white/90 text-lg mb-6">恭喜你完成了 {settings.trainingDuration} 分钟的视力训练!</p>
+                <button onClick={() => setShowCompletionModal(false)}
+                  className="w-full py-4 bg-white text-green-600 rounded-xl font-bold">
+                  太棒了!
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<VisionTrainingApp />);
+  </script>
+
+  <!-- Service Worker注册 -->
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+          .then((registration) => {
+            console.log('✅ Service Worker注册成功');
+            
+            registration.addEventListener('updatefound', () => {
+              const newWorker = registration.installing;
+              console.log('🔄 发现新版本...');
+              
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'activated') {
+                  console.log('✅ 新版本已激活');
+                  if (confirm('应用有新版本,是否刷新?')) {
+                    window.location.reload();
+                  }
+                }
+              });
+            });
+          })
+          .catch((error) => {
+            console.log('❌ Service Worker注册失败:', error);
+          });
+      });
+
+      navigator.serviceWorker.ready.then((registration) => {
+        console.log('✅ Service Worker已就绪');
+      });
+    }
+
+    let deferredPrompt;
+    
+    window.addEventListener('beforeinstallprompt', (e) => {
+      console.log('💡 可以安装PWA了');
+      e.preventDefault();
+      deferredPrompt = e;
+      showInstallButton();
+    });
+
+    function showInstallButton() {
+      const banner = document.createElement('div');
+      banner.innerHTML = `
+        <div style="
+          position: fixed;
+          bottom: 80px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 16px 24px;
+          border-radius: 16px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+          z-index: 10000;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          font-size: 14px;
+          animation: slideUp 0.3s ease;
+        ">
+          <span>📲 安装应用到桌面</span>
+          <button onclick="installPWA()" style="
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+          ">安装</button>
+          <button onclick="this.parentElement.remove()" style="
+            background: transparent;
+            color: white;
+            border: 1px solid white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+          ">×</button>
+        </div>
+      `;
+      document.body.appendChild(banner);
+    }
+
+    window.installPWA = async function() {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`用户选择: ${outcome}`);
+      deferredPrompt = null;
+      const banner = document.querySelector('div[style*="slideUp"]');
+      if (banner) banner.parentElement.remove();
+    };
+
+    window.addEventListener('appinstalled', (e) => {
+      console.log('✅ PWA安装成功!');
+    });
+  </script>
+
+</body>
+</html>
